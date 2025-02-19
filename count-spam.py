@@ -14,9 +14,7 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
 
 def authenticate_gmail():
-    """Shows basic usage of the Gmail API.
-    Lists the user's Gmail labels.
-    """
+    """Authenticates with the Gmail API using OAuth 2.0."""
     creds = None
     # The file token.json stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
@@ -39,7 +37,7 @@ def authenticate_gmail():
 
 
 def get_spam_counts(service):
-    """Retrieves spam emails for the past 31 days and counts them by date."""
+    """Retrieves spam emails for the past 31 days and counts them by date using internalDate."""
 
     today = datetime.date.today()
     daily_counts = defaultdict(int)
@@ -60,42 +58,19 @@ def get_spam_counts(service):
             print('No spam messages found.')
             return daily_counts
 
-        # Process Each Message to extract date
+        # Process each message to extract internalDate
         for message in messages:
-            msg = service.users().messages().get(userId='me',
-                                                 id=message['id'], format='metadata', metadataHeaders=['Date']).execute()
-            headers = msg['payload']['headers']
-            date_str = None
-            for header in headers:
-                if header['name'] == 'Date':
-                    date_str = header['value']
-                    break
+            # internalDate is returned as milliseconds since epoch
+            internal_date_ms = int(message['internalDate'])
+            # Convert to seconds
+            internal_date_s = internal_date_ms / 1000
+            # Create datetime object
+            dt = datetime.datetime.fromtimestamp(internal_date_s)
+            email_date = dt.date()
 
-            if date_str:
-                try:
-                    # Parse the date string.  RFC 2822 format.  Handle timezone.
-                    # Example: "Fri, 20 Oct 2023 15:01:23 -0700" or "21 Oct 2023 00:48:13 +0200"
-                    # Remove timezone offset, as datetime.strptime doesn't easily handle varying timezones.
-
-                    date_str = ' '.join(date_str.split()[:-1])
-
-                    # Use strptime to create a datetime object
-                    dt = datetime.datetime.strptime(
-                        date_str, '%a, %d %b %Y %H:%M:%S')  # Weekday
-
-                except ValueError:
-                    try:
-                        dt = datetime.datetime.strptime(
-                            date_str, '%d %b %Y %H:%M:%S')  # No Weekday
-                    except ValueError:
-                        print(f"Could not parse date: {date_str}")
-                        continue  # skip current message
-
-                email_date = dt.date()
-
-                # Check if the email is within the past 31 days
-                if (today - email_date).days <= 31:
-                    daily_counts[email_date] += 1
+            # Check if the email is within the past 31 days
+            if (today - email_date).days <= 31:
+                daily_counts[email_date] += 1
 
     except HttpError as error:
         print(f'An error occurred: {error}')
@@ -116,9 +91,8 @@ def main():
         spam_counts = get_spam_counts(service)
 
         if spam_counts is not None:
-            # Print the results
-            print("Spam email counts for the past 31 days:")
-            for date, count in sorted(spam_counts.items()):  # Sort by date
+            print("Spam email counts for the past 31 days (based on internalDate):")
+            for date, count in sorted(spam_counts.items()):
                 print(f"{date}: {count}")
     except HttpError as error:
         # TODO(developer) - Handle errors from gmail API.
