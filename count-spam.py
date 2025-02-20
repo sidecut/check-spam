@@ -106,7 +106,9 @@ def main():
         if spam_counts is not None:
             print("Spam email counts for the past 31 days (based on internalDate):")
             for date, count in sorted(spam_counts.items()):
-                print(f"{date}: {count}")
+                # Format date to include day of week abbreviation
+                day_of_week = date.strftime("%a")
+                print(f"{day_of_week} {date}: {count}")
     except HttpError as error:
         # TODO(developer) - Handle errors from gmail API.
         print(f'An error occurred: {error}')
