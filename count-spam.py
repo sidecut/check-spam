@@ -41,6 +41,8 @@ def get_spam_counts(service):
 
     today = datetime.date.today()
     daily_counts = defaultdict(int)
+    spinner_chars = ['|', '/', '-', '\\']
+    message_count = 0
 
     try:
         # Get all messages in the SPAM folder
@@ -60,6 +62,11 @@ def get_spam_counts(service):
 
         # Process each message to extract internalDate
         for message in messages:
+            # Show spinner
+            print(
+                f'\rProcessing messages... {spinner_chars[message_count % 4]}', end='')
+            message_count += 1
+
             # Get the full message details
             msg = service.users().messages().get(
                 userId='me', id=message['id']).execute()
@@ -74,6 +81,9 @@ def get_spam_counts(service):
             # Check if the email is within the past 31 days
             if (today - email_date).days <= 31:
                 daily_counts[email_date] += 1
+
+        # Clear the spinner line when done
+        print('\rProcessed {} messages.          '.format(message_count))
 
     except HttpError as error:
         print(f'An error occurred: {error}')
