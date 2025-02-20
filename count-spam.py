@@ -45,42 +45,68 @@ def get_spam_counts(service):
     message_count = 0
 
     try:
-        # Get all messages in the SPAM folder
-        results = service.users().messages().list(
-            userId='me', labelIds=['SPAM']).execute()
-        messages = results.get('messages', [])
+        # Get all messages in the SPAM folder, only fetch id and internalDate
+        # Use maxResults=500 (max allowed) to reduce API calls
+        messages = []
+        next_page_token = None
 
-        while 'nextPageToken' in results:  # Handle pagination
-            page_token = results['nextPageToken']
-            results = service.users().messages().list(userId='me', labelIds=[
-                'SPAM'], pageToken=page_token).execute()
-            messages.extend(results.get('messages', []))
+        while True:
+            results = service.users().messages().list(
+                userId='me',
+                labelIds=['SPAM'],
+                maxResults=500,
+                pageToken=next_page_token,
+                fields='messages(id),nextPageToken'  # Only fetch needed fields
+            ).execute()
+
+            if 'messages' in results:
+                messages.extend(results['messages'])
+
+            if 'nextPageToken' not in results:
+                break
+            next_page_token = results['nextPageToken']
 
         if not messages:
             print('No spam messages found.')
             return daily_counts
 
-        # Process each message to extract internalDate
-        for message in messages:
-            # Show spinner
-            print(
-                f'\rProcessing messages... {spinner_chars[message_count % 4]}', end='')
-            message_count += 1
+        # Batch get messages in groups of 50 to reduce API calls
+        for i in range(0, len(messages), 50):
+            batch = messages[i:i + 50]
 
-            # Get the full message details
-            msg = service.users().messages().get(
-                userId='me', id=message['id']).execute()
-            # internalDate is returned as milliseconds since epoch
-            internal_date_ms = int(msg['internalDate'])
-            # Convert to seconds
-            internal_date_s = internal_date_ms / 1000
-            # Create datetime object
-            dt = datetime.datetime.fromtimestamp(internal_date_s)
-            email_date = dt.date()
+            # Create batch request
+            batch_request = service.new_batch_http_request()
 
-            # Check if the email is within the past 31 days
-            if (today - email_date).days <= 31:
-                daily_counts[email_date] += 1
+            def callback(request_id, response, exception):
+                nonlocal message_count
+                if exception is None:
+                    # Convert internalDate to date and increment counter
+                    internal_date_ms = int(response['internalDate'])
+                    email_date = datetime.datetime.fromtimestamp(
+                        internal_date_ms / 1000).date()
+
+                    if (today - email_date).days <= 31:
+                        daily_counts[email_date] += 1
+
+                # Update spinner
+                print(
+                    f'\rProcessing messages... {spinner_chars[message_count % 4]}', end='')
+                message_count += 1
+
+            # Add each message to the batch request
+            for msg in batch:
+                batch_request.add(
+                    service.users().messages().get(
+                        userId='me',
+                        id=msg['id'],
+                        format='minimal',  # Only fetch minimal data
+                        fields='internalDate'  # Only fetch the date field
+                    ),
+                    callback=callback
+                )
+
+            # Execute the batch request
+            batch_request.execute()
 
         # Clear the spinner line when done
         print('\rProcessed {} messages.          '.format(message_count))
