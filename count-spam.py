@@ -60,8 +60,11 @@ def get_spam_counts(service):
 
         # Process each message to extract internalDate
         for message in messages:
+            # Get the full message details
+            msg = service.users().messages().get(
+                userId='me', id=message['id']).execute()
             # internalDate is returned as milliseconds since epoch
-            internal_date_ms = int(message['internalDate'])
+            internal_date_ms = int(msg['internalDate'])
             # Convert to seconds
             internal_date_s = internal_date_ms / 1000
             # Create datetime object
